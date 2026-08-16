@@ -26,7 +26,7 @@ DeepSeek Harness 的 Web 面由 `@deepseek-ai/dsh-host-webserver` 提供 `webSer
 会话采用 Hermes `dashboard_auth/basic` 的无状态 HMAC 签名 token，并额外加了两个硬化点：
 
 - **`pv`（password generation，口令代际）**：token 负载里带 `pv`，状态文件里存当前 `pv`。改密时 `pv += 1`，所有旧 token 因代际不匹配立即失效——一次操作让全部旧会话下线，无需扫描会话表。
-- **`jti`（token id）+ 内存吊销表**：登出与 refresh 轮换时把单个 token 的 `jti` 加入吊销表（按 `exp` 惰性淘汰），用于「吊销某一个会话」而非「全部」。
+- **`jti`（token id）+ 内存吊销表**：登出时把单个 token 的 `jti` 加入吊销表（按 `exp` 惰性淘汰），用于「吊销某一个会话」而非「全部」。**续期不吊销旧 refresh**——这与 Hermes 的无状态模型一致：若在续期时立刻吊销旧 refresh，会与浏览器续期瞬间的并发请求竞态，把用户误踢下线。
 
 token 格式：`base64url(JSON(payload) || HMAC-SHA256(JSON(payload)))`。HMAC 后缀定长 32 字节，无需分隔符。
 
@@ -39,7 +39,7 @@ token 格式：`base64url(JSON(payload) || HMAC-SHA256(JSON(payload)))`。HMAC �
 | `iat` / `exp` | 签发/过期时间（epoch 秒） |
 
 - access token 默认 12h，放在 `HttpOnly; SameSite=Strict` Cookie 里，随每次请求携带。
-- refresh token 默认 30d，仅在 access 过期时被网关消费；网关验到「access 过期但 refresh 有效」时**透明轮换**：吊销旧 refresh、签发新 access+refresh，并把新 Cookie 合并进响应（HTTP 与 WebSocket 101 都支持）。
+- refresh token 默认 30d，仅在 access 过期时被网关消费；网关验到「access 过期但 refresh 有效」时**透明续期**：签发新 access+refresh，并把新 Cookie 合并进响应（HTTP 与 WebSocket 101 都支持）。旧 refresh 继续有效至其 `exp`，避免并发续期竞态。
 
 ## 密码学
 

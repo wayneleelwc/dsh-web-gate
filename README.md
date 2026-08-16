@@ -12,7 +12,7 @@ A tiny, auditable reverse proxy that puts a password login in front of the DSH W
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#prerequisites)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#features)
-[![Tests: passing](https://img.shields.io/badge/tests-61%20passing-brightgreen.svg)](#tests)
+[![Tests: passing](https://img.shields.io/badge/tests-63%20passing-brightgreen.svg)](#tests)
 
 </div>
 
@@ -234,7 +234,7 @@ test/                  node:test unit + end-to-end tests
 npm test   # equivalent to `node --test "test/*.test.js"`
 ```
 
-The 61 tests cover hashing round-trips and tamper detection, token signing/expiry/pv-invalidation/revocation, rate-limit lockout and pruning, config validation, the CLI, login/logout/change-password, SSE streaming proxying, WebSocket gating and proxying, header-handling (X-Forwarded-*), and security headers.
+The 63 tests cover hashing round-trips and tamper detection, token signing/expiry/pv-invalidation/revocation, rate-limit lockout and pruning, config validation, the CLI, login/logout/change-password, SSE streaming proxying, WebSocket gating and proxying, header-handling (X-Forwarded-*), and security headers.
 
 ## FAQ
 

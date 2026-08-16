@@ -122,6 +122,12 @@ export function createGate({ config, state, revocation, persist }) {
    * Authenticate a request. Returns `{ ok, payload }`, plus `rotated` cookies
    * when an expired access token was transparently renewed from a valid
    * refresh token. In insecure mode every request is treated as authenticated.
+   *
+   * Renewal does NOT revoke the old refresh token (matching the Hermes
+   * `basic` provider's stateless model): revoking it here would race with the
+   * browser's concurrent requests during renewal and log the user out. A
+   * refresh token is revoked only on logout (jti denylist) or invalidated
+   * globally on password change (pv generation).
    */
   function authenticate(req) {
     if (config.insecure) return { ok: true, payload: { sub: session.username, insecure: true } }
@@ -137,7 +143,6 @@ export function createGate({ config, state, revocation, persist }) {
     if (refresh) {
       const refreshPayload = verifyToken({ token: refresh, secret: state.secret, kind: 'refresh', pv: state.pv, nowSeconds: now })
       if (refreshPayload && !revocation.isRevoked(refreshPayload.jti)) {
-        revocation.add(refreshPayload.jti, refreshPayload.exp)
         return { ok: true, payload: refreshPayload, rotated: mintCookies(true) }
       }
     }

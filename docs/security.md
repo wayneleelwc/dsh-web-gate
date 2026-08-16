@@ -10,7 +10,7 @@
 | 口令泄露（内存） | 验证后即丢弃明文；token 用 HMAC 签名而非加密，无需口令参与 |
 | 会话 token 被窃取 | Cookie `HttpOnly`（脚本不可读）+ `SameSite=Strict` + 可选 `Secure`；access 短寿命 + 透明轮换 |
 | 改密后旧会话残留 | `pv` 代际 bump，旧 token 立即失效 |
-| 单个会话被窃取后的登出 | `jti` 吊销表（登出/轮换时写入） |
+| 单个会话被窃取后的登出 | `jti` 吊销表（登出时写入；refresh 续期不吊销，见 architecture.md） |
 | CSRF | `SameSite=Strict` Cookie + 网关自身写操作同源校验；DSH 自身的 `/api` Origin/Host 栅栏继续生效 |
 | DNS rebinding / 跨站读取 | 网关自身页面带严格 CSP + `X-Frame-Options: DENY`；DSH 的 Host 栅栏继续生效 |
 | 会话 token 泄露给上游 | 反代前剥离网关自己的 Cookie，DSH 不接触 token |

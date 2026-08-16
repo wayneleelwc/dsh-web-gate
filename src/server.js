@@ -118,7 +118,7 @@ export function createGateway({ config, state, revocation, persist, logger = con
     if (method === 'GET' && path === '/login') {
       const auth = gate.authenticate(req)
       if (auth.ok) {
-        res.writeHead(302, { location: '/' })
+        res.writeHead(302, { location: '/', 'set-cookie': auth.rotated ?? [] })
         res.end()
         return
       }
@@ -134,7 +134,7 @@ export function createGateway({ config, state, revocation, persist, logger = con
         res.end()
         return
       }
-      writeHtml(res, 200, settingsPage({ username: session.username }))
+      writeHtml(res, 200, settingsPage({ username: session.username }), { 'set-cookie': auth.rotated ?? [] })
       return
     }
 

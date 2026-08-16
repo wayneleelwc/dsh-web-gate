@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'
+import { mintSession } from '../src/tokens.js'
 import { startUpstream, startGateway, login, rawUpgrade } from './helpers.js'
 
 test('unauthenticated navigation redirects to /login; /api returns 401', async () => {
@@ -278,6 +279,55 @@ test('weird request URLs are handled without a 5xx', async () => {
       socket.write('GET /% HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n')
     })
     assert.doesNotMatch(head, /HTTP\/1\.1 5\d\d/)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('expired access with valid refresh renews without logging out', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    // Mint tokens with the gateway's own secret: access expired, refresh valid.
+    const minted = mintSession({
+      secret: gw.state.secret,
+      sub: 'admin',
+      pv: gw.state.pv,
+      accessTtlSeconds: -10,
+      refreshTtlSeconds: 3600,
+    })
+    const cookieHeader = `dsh_web_gate_access=${minted.accessToken}; dsh_web_gate_refresh=${minted.refreshToken}`
+
+    // Renewal returns a re-issued pair alongside the proxied response.
+    const res = await fetch(`${gw.base}/hello`, { headers: { cookie: cookieHeader } })
+    assert.equal(res.status, 200)
+    const rotated = res.headers.getSetCookie ? res.headers.getSetCookie() : []
+    assert.ok(rotated.length >= 2)
+
+    // The old refresh is NOT hard-revoked on renewal, so a concurrent request
+    // still carrying it must keep working (no logout / redirect loop).
+    const res2 = await fetch(`${gw.base}/hello`, { headers: { cookie: cookieHeader } })
+    assert.equal(res2.status, 200)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('logout revokes the presented session', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const { cookieHeader } = await login(gw.base)
+    await fetch(`${gw.base}/auth/logout`, {
+      method: 'POST',
+      headers: { cookie: cookieHeader, origin: gw.base },
+      redirect: 'manual',
+    })
+    // Reusing the logged-out token (e.g. a stolen copy) is rejected.
+    const res = await fetch(`${gw.base}/hello`, { headers: { cookie: cookieHeader }, redirect: 'manual' })
+    assert.equal(res.status, 302)
   } finally {
     await gw.stop()
     await up.stop()
