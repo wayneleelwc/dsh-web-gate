@@ -12,7 +12,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#前置条件)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#特性)
-[![Tests: passing](https://img.shields.io/badge/tests-59%20passing-brightgreen.svg)](#测试)
+[![Tests: passing](https://img.shields.io/badge/tests-61%20passing-brightgreen.svg)](#测试)
 
 </div>
 
@@ -192,7 +192,7 @@ test/                  node:test 单元 + 端到端测试
 npm test   # 等价于 node --test "test/*.test.js"
 ```
 
-59 个测试覆盖哈希往返与篡改、token 签发/过期/pv 失效/吊销、限流锁定与清理、配置校验、CLI、登录/登出/改密、SSE 流式透传、WebSocket 鉴权与透传、头部处理（X-Forwarded-*）与安全响应头。
+61 个测试覆盖哈希往返与篡改、token 签发/过期/pv 失效/吊销、限流锁定与清理、配置校验、CLI、登录/登出/改密、SSE 流式透传、WebSocket 鉴权与透传、头部处理（X-Forwarded-*）与安全响应头。
 
 ## FAQ
 
