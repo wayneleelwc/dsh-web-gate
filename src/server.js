@@ -19,7 +19,7 @@ function writeHtml(res, status, html, extra = {}) {
 }
 
 function writeJson(res, status, obj) {
-  res.writeHead(status, { ...JSON_HEADERS, ...securityHeaders() })
+  res.writeHead(status, JSON_HEADERS)
   res.end(JSON.stringify(obj))
 }
 
