@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+
+# State and config files contain secrets — never commit them.
+dsh-web-gate.state.json
+dsh-web-gate.config.json
+config.json
+.env

@@ -1,0 +1,46 @@
+{
+  "name": "dsh-web-gate",
+  "version": "0.1.0",
+  "description": "Zero-dependency password gateway (reverse proxy) that puts an authentication gate in front of the DeepSeek Harness Web GUI",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wayneleelwc/dsh-web-gate.git"
+  },
+  "bin": {
+    "dsh-web-gate": "bin/dsh-web-gate.js"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./server": "./src/server.js"
+  },
+  "scripts": {
+    "start": "node bin/dsh-web-gate.js",
+    "test": "node --test",
+    "hash-password": "node bin/dsh-web-gate.js hash-password"
+  },
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "authentication",
+    "reverse-proxy",
+    "gateway",
+    "security",
+    "password",
+    "self-hosted",
+    "zero-dependency"
+  ],
+  "dependencies": {}
+}
