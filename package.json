@@ -34,6 +34,7 @@
     "docs",
     "config.example.json",
     "README.md",
+    "README.zh-CN.md",
     "CHANGELOG.md",
     "SECURITY.md",
     "LICENSE"

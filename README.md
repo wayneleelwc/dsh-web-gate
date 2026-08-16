@@ -6,6 +6,8 @@
 
 A tiny, auditable reverse proxy that puts a password login in front of the DSH Web GUI — static pages, the `/api` JSON-RPC + SSE transport, and WebSocket upgrades.
 
+[English](README.md) · [中文](README.zh-CN.md)
+
 [![CI](https://github.com/wayneleelwc/dsh-web-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/wayneleelwc/dsh-web-gate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#prerequisites)
