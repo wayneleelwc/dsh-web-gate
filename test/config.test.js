@@ -60,3 +60,12 @@ test('logRequests and trustProxy are resolved from env', () => {
   assert.equal(config.trustProxy, true)
   assert.equal(config.logRequests, true)
 })
+
+test('non-numeric integer values fail loud', () => {
+  assert.throws(() => resolveConfig({ env: { DSH_WEB_GATE_PORT: 'abc' } }), /expected an integer/)
+  assert.throws(() => resolveConfig({ env: { DSH_WEB_GATE_ACCESS_TTL: 'soon' } }), /expected an integer/)
+})
+
+test('invalid boolean values fail loud', () => {
+  assert.throws(() => resolveConfig({ env: { DSH_WEB_GATE_INSECURE: 'maybe' } }), /expected a boolean/)
+})

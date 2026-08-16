@@ -37,12 +37,19 @@ function first(...values) {
 function toInt(value) {
   if (value === undefined || value === null || value === '') return undefined
   const n = Number(value)
-  return Number.isInteger(n) ? n : undefined
+  if (!Number.isInteger(n)) {
+    throw new Error(`dsh-web-gate: expected an integer, got ${JSON.stringify(value)}`)
+  }
+  return n
 }
 
 function toBool(value) {
   if (value === undefined || value === null || value === '') return undefined
-  return value === true || value === 1 || value === '1' || value === 'true'
+  if (value === true || value === false) return value
+  if (value === 1 || value === 0) return value === 1
+  if (value === '1' || value === '0') return value === '1'
+  if (value === 'true' || value === 'false') return value === 'true'
+  throw new Error(`dsh-web-gate: expected a boolean, got ${JSON.stringify(value)}`)
 }
 
 function validatePort(value, label) {
