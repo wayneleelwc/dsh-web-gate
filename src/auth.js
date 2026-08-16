@@ -54,14 +54,23 @@ export function readBody(req, maxBytes = 64 * 1024) {
   })
 }
 
+/** Decode one form component, tolerating malformed percent-encoding. */
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 /** Parse an application/x-www-form-urlencoded body. */
 export function parseForm(body) {
   const out = {}
   for (const pair of body.split('&')) {
     if (!pair) continue
     const idx = pair.indexOf('=')
-    const key = decodeURIComponent(pair.slice(0, idx === -1 ? pair.length : idx).replace(/\+/g, ' '))
-    const value = idx === -1 ? '' : decodeURIComponent(pair.slice(idx + 1).replace(/\+/g, ' '))
+    const key = safeDecode(pair.slice(0, idx === -1 ? pair.length : idx).replace(/\+/g, ' '))
+    const value = idx === -1 ? '' : safeDecode(pair.slice(idx + 1).replace(/\+/g, ' '))
     if (key) out[key] = value
   }
   return out

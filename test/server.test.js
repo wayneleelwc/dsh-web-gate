@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { connect } from 'node:net'
 import { startUpstream, startGateway, login, rawUpgrade } from './helpers.js'
 
 test('unauthenticated navigation redirects to /login; /api returns 401', async () => {
@@ -56,6 +57,20 @@ test('authenticated requests are proxied with the original Host preserved', asyn
     assert.equal(body.url, '/hello?x=1')
     assert.equal(body.host, new URL(gw.base).host)
     assert.equal(body.cookie, null) // gateway cookies are not forwarded
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('forwardHost=target rewrites the Host to the upstream', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port, forwardHost: 'target' })
+  try {
+    const { cookieHeader } = await login(gw.base)
+    const res = await fetch(`${gw.base}/hello`, { headers: { cookie: cookieHeader } })
+    const body = await res.json()
+    assert.equal(body.host, `127.0.0.1:${up.port}`)
   } finally {
     await gw.stop()
     await up.stop()
@@ -238,6 +253,31 @@ test('oversized login body returns 413', async () => {
       redirect: 'manual',
     })
     assert.equal(res.status, 413)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('weird request URLs are handled without a 5xx', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const head = await new Promise((resolve, reject) => {
+      const socket = connect(gw.port, '127.0.0.1')
+      let buffer = ''
+      socket.on('data', (d) => {
+        buffer += d.toString()
+        if (buffer.includes('\r\n\r\n')) {
+          socket.destroy()
+          resolve(buffer)
+        }
+      })
+      socket.on('error', reject)
+      socket.on('close', () => resolve(buffer))
+      socket.write('GET /% HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n')
+    })
+    assert.doesNotMatch(head, /HTTP\/1\.1 5\d\d/)
   } finally {
     await gw.stop()
     await up.stop()

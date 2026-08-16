@@ -43,14 +43,14 @@ export async function startUpstream() {
 }
 
 /** Start a gateway bound to an ephemeral port, proxying to `upstreamPort`. */
-export async function startGateway({ upstreamPort, password = 'test-password', trustProxy = false, logRequests = false }) {
+export async function startGateway({ upstreamPort, password = 'test-password', trustProxy = false, logRequests = false, forwardHost = 'preserve' }) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-web-gate-'))
   const stateFile = join(dir, 'state.json')
   const state = emptyState()
   state.passwordHash = hashPassword(password)
   const config = resolveConfig({
     env: {},
-    overrides: { upstreamPort, state: stateFile, port: 0, host: '127.0.0.1', trustProxy, logRequests },
+    overrides: { upstreamPort, state: stateFile, port: 0, host: '127.0.0.1', trustProxy, logRequests, forwardHost },
   })
   const revocation = new RevocationList()
   const gateway = createGateway({

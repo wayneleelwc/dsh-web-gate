@@ -81,7 +81,13 @@ export function createGateway({ config, state, revocation, persist, logger = con
   })
 
   async function handle(req, res) {
-    const url = new URL(req.url ?? '/', 'http://gate.internal')
+    let url
+    try {
+      url = new URL(req.url ?? '/', 'http://gate.internal')
+    } catch {
+      writeJson(res, 400, { error: 'bad request' })
+      return
+    }
     const path = url.pathname
     const method = req.method ?? 'GET'
 

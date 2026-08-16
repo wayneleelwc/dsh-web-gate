@@ -60,6 +60,10 @@ test('parseForm decodes urlencoded bodies', () => {
   assert.deepEqual(parseForm('a=1&a=2&empty='), { a: '2', empty: '' })
 })
 
+test('parseForm tolerates malformed percent-encoding', () => {
+  assert.deepEqual(parseForm('password=%zz&remember=1'), { password: '%zz', remember: '1' })
+})
+
 test('authenticate rejects without cookies', () => {
   const { gate } = makeGate()
   assert.equal(gate.authenticate({ headers: {} }).ok, false)
