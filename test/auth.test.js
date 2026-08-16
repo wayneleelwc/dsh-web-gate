@@ -131,6 +131,14 @@ test('change password rejects mismatched confirm and short passwords', async () 
   assert.equal((await gate.changePassword({ current: 'wrong-current', password: 'a'.repeat(9), confirm: 'a'.repeat(9) })).status, 401)
 })
 
+test('change password is rate-limited on wrong current password', async () => {
+  const { gate } = makeGate({ rateLimit: { login: { windowMs: 60000, maxAttempts: 2, lockoutMs: 60000 } } })
+  await gate.changePassword({ current: 'wrong', password: 'a'.repeat(9), confirm: 'a'.repeat(9), clientKey: 'ip' })
+  await gate.changePassword({ current: 'wrong', password: 'a'.repeat(9), confirm: 'a'.repeat(9), clientKey: 'ip' })
+  const blocked = await gate.changePassword({ current: 'secret-password', password: 'b'.repeat(9), confirm: 'b'.repeat(9), clientKey: 'ip' })
+  assert.equal(blocked.status, 429)
+})
+
 test('insecure mode authenticates every request', () => {
   const { gate } = makeGate({ insecure: true })
   const res = gate.authenticate({ headers: {} })

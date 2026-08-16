@@ -89,6 +89,7 @@ export function createGate({ config, state, revocation, persist }) {
   const accessCookie = `${session.cookieName}_access`
   const refreshCookie = `${session.cookieName}_refresh`
   const loginLimiter = new LoginLimiter(rateLimit.login)
+  const changePasswordLimiter = new LoginLimiter(rateLimit.login)
   const globalBucket = rateLimit.global.enabled ? new TokenBucket(rateLimit.global) : null
 
   const nowSeconds = () => Math.floor(Date.now() / 1000)
@@ -180,11 +181,17 @@ export function createGate({ config, state, revocation, persist }) {
   }
 
   /** Change password: verify current, hash new, bump pv (invalidates all sessions). */
-  async function changePassword({ current, password, confirm }) {
+  async function changePassword({ current, password, confirm, clientKey = 'unknown' }) {
+    const limit = changePasswordLimiter.check(clientKey)
+    if (!limit.allowed) return { status: 429, error: '尝试次数过多，请稍后再试' }
     if (password !== confirm) return { status: 400, error: '两次输入的新口令不一致' }
     if (password.length < 8) return { status: 400, error: '新口令至少需要 8 个字符' }
     const ok = await verifyPassword(current, state.passwordHash ?? '')
-    if (!ok) return { status: 401, error: '当前口令错误' }
+    if (!ok) {
+      changePasswordLimiter.recordFailure(clientKey)
+      return { status: 401, error: '当前口令错误' }
+    }
+    changePasswordLimiter.recordSuccess(clientKey)
     state.passwordHash = hashPassword(password)
     state.pv = state.pv + 1
     await persist()

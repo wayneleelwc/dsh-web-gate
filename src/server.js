@@ -200,6 +200,7 @@ export function createGateway({ config, state, revocation, persist, logger = con
       current: form.current ?? '',
       password: form.password ?? '',
       confirm: form.confirm ?? '',
+      clientKey: clientKey(req, trustProxy),
     })
     if (result.status === 200) {
       writeHtml(res, 200, settingsPage({ success: result.success, username: session.username }), { 'set-cookie': result.cookies })
