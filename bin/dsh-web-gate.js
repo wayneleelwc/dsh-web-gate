@@ -193,7 +193,7 @@ async function startCommand(flags) {
   }
 
   const shutdown = () => {
-    gateway.server.close(() => process.exit(0))
+    void gateway.close().then(() => process.exit(0))
   }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
