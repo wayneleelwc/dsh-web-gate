@@ -15,5 +15,6 @@
   },
   "stateFile": "./dsh-web-gate.state.json",
   "insecure": false,
-  "trustProxy": false
+  "trustProxy": false,
+  "logRequests": false
 }

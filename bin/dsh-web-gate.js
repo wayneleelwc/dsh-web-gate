@@ -153,9 +153,9 @@ async function setupPassword(state, config) {
   }
   if (process.stdin.isTTY) {
     const first = await promptPassword('设置初始访问口令（至少 8 位）: ')
-    if (first.length < 8) throw new Error('口令至少需要 8 个字符')
+    if (first.length < 8) throw new Error('dsh-web-gate: 口令至少需要 8 个字符')
     const second = await promptPassword('再次输入确认: ')
-    if (first !== second) throw new Error('两次输入不一致')
+    if (first !== second) throw new Error('dsh-web-gate: 两次输入不一致')
     state.passwordHash = hashPassword(first)
     return
   }
@@ -251,7 +251,7 @@ async function main() {
     if (!password) {
       password = await promptPassword('新口令（至少 8 位）: ')
     }
-    if (password.length < 8) throw new Error('口令至少需要 8 个字符')
+    if (password.length < 8) throw new Error('dsh-web-gate: 口令至少需要 8 个字符')
     state.passwordHash = hashPassword(password)
     state.pv = (state.pv ?? 1) + 1
     await saveState(config.stateFile, state)
@@ -269,6 +269,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  process.stderr.write(`dsh-web-gate: ${err instanceof Error ? err.message : String(err)}\n`)
+  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
   process.exitCode = 1
 })

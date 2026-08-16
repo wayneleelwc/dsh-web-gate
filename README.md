@@ -10,7 +10,7 @@ A tiny, auditable reverse proxy that puts a password login in front of the DSH W
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#prerequisites)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#features)
-[![Tests: passing](https://img.shields.io/badge/tests-32%20passing-brightgreen.svg)](#tests)
+[![Tests: passing](https://img.shields.io/badge/tests-55%20passing-brightgreen.svg)](#tests)
 
 </div>
 
@@ -128,7 +128,8 @@ Three layers, highest precedence first: **CLI flags > `DSH_WEB_GATE_*` environme
 | `DSH_WEB_GATE_LOGIN_LOCKOUT_MS` | `900000` | Lockout duration (ms) |
 | `DSH_WEB_GATE_GLOBAL_LIMIT_ENABLED` | `false` | Enable the global token bucket |
 | `DSH_WEB_GATE_STATE` | `./dsh-web-gate.state.json` | State file (password hash + signing key, mode 0600) |
-| `DSH_WEB_GATE_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` (only behind a trusted proxy) |
+| `DSH_WEB_GATE_TRUST_PROXY` | `false` | Trust `X-Forwarded-*` (only behind a trusted proxy) |
+| `DSH_WEB_GATE_LOG_REQUESTS` | `false` | Log one line per request |
 | `DSH_WEB_GATE_INSECURE` | `false` | Disable authentication (**dangerous**) |
 
 See [`config.example.json`](config.example.json) for the config-file form.
@@ -142,7 +143,9 @@ See [`config.example.json`](config.example.json) for the config-file form.
 --upstream-host      DSH host
 --upstream-port      DSH port
 --state <path>       state file
+--log-requests       log one line per request
 --insecure           disable the auth gate
+--version, -v        print the version
 ```
 
 ## Gateway endpoints
@@ -229,7 +232,7 @@ test/                  node:test unit + end-to-end tests
 npm test   # equivalent to `node --test "test/*.test.js"`
 ```
 
-The 32 tests cover hashing round-trips and tamper detection, token signing/expiry/pv-invalidation/revocation, rate-limit lockout, login/logout/change-password, SSE streaming proxying, WebSocket gating and proxying, and security headers.
+The 55 tests cover hashing round-trips and tamper detection, token signing/expiry/pv-invalidation/revocation, rate-limit lockout and pruning, config validation, the CLI, login/logout/change-password, SSE streaming proxying, WebSocket gating and proxying, header-handling (X-Forwarded-*), and security headers.
 
 ## FAQ
 
