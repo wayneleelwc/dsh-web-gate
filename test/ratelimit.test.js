@@ -42,3 +42,35 @@ test('token bucket consumes and refills', () => {
   assert.equal(bucket.take('k', 1000), true)
   assert.equal(bucket.take('k', 1000), false)
 })
+
+test('login limiter prune clears expired locks', () => {
+  const limiter = new LoginLimiter({ windowMs: 1000, maxAttempts: 3, lockoutMs: 1000 })
+  const now = 1_000_000
+  limiter.recordFailure('ip1', now)
+  limiter.recordFailure('ip1', now)
+  limiter.recordFailure('ip1', now)
+  assert.equal(limiter.check('ip1', now).allowed, false)
+  limiter.prune(now + 2000)
+  assert.equal(limiter.check('ip1', now + 2000).allowed, true)
+})
+
+test('login limiter prune drops stale failure timestamps', () => {
+  const limiter = new LoginLimiter({ windowMs: 1000, maxAttempts: 5, lockoutMs: 1000 })
+  const now = 1_000_000
+  limiter.recordFailure('ip1', now)
+  limiter.prune(now + 5000)
+  // The stale failure is gone, so two new failures do not lock the key.
+  limiter.recordFailure('ip1', now + 5000)
+  limiter.recordFailure('ip1', now + 5000)
+  assert.equal(limiter.check('ip1', now + 5000).allowed, true)
+})
+
+test('token bucket prune drops idle buckets', () => {
+  const bucket = new TokenBucket({ capacity: 2, refillPerSecond: 1 })
+  bucket.take('k', 0)
+  bucket.prune(5000)
+  // Bucket was idle long enough to refill fully, so a fresh one is used.
+  assert.equal(bucket.take('k', 5000), true)
+  assert.equal(bucket.take('k', 5000), true)
+  assert.equal(bucket.take('k', 5000), false)
+})

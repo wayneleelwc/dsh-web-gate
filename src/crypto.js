@@ -104,16 +104,3 @@ export function unsignToken(token, secret) {
     return null
   }
 }
-
-/**
- * Constant-time comparison of two strings. Byte length is not secret here
- * (used for CSRF/origin checks), so a length short-circuit is acceptable.
- * @param a - first string.
- * @param b - second string.
- */
-export function timingSafeEqualStr(a, b) {
-  const ab = Buffer.from(a, 'utf8')
-  const bb = Buffer.from(b, 'utf8')
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}

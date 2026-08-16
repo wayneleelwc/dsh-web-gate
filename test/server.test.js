@@ -179,3 +179,67 @@ test('security headers are present on gate pages', async () => {
     await up.stop()
   }
 })
+
+test('X-Forwarded-For is overwritten (not spoofable) without trustProxy', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const { cookieHeader } = await login(gw.base)
+    const res = await fetch(`${gw.base}/xff`, {
+      headers: { cookie: cookieHeader, 'x-forwarded-for': '6.6.6.6' },
+    })
+    const body = await res.json()
+    assert.equal(body.xff, '127.0.0.1')
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('X-Forwarded-For appends the chain with trustProxy', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port, trustProxy: true })
+  try {
+    const { cookieHeader } = await login(gw.base)
+    const res = await fetch(`${gw.base}/xff`, {
+      headers: { cookie: cookieHeader, 'x-forwarded-for': '6.6.6.6' },
+    })
+    const body = await res.json()
+    assert.match(body.xff, /^6\.6\.6\.6, 127\.0\.0\.1$/)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('HEAD requests are proxied without a body', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const { cookieHeader } = await login(gw.base)
+    const res = await fetch(`${gw.base}/anything`, { method: 'HEAD', headers: { cookie: cookieHeader } })
+    assert.equal(res.status, 200)
+    assert.equal(await res.text(), '')
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
+test('oversized login body returns 413', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const big = 'x'.repeat(70 * 1024)
+    const res = await fetch(`${gw.base}/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: `password=${big}`,
+      redirect: 'manual',
+    })
+    assert.equal(res.status, 413)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})

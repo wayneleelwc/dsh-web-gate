@@ -62,9 +62,20 @@ export function createGateway({ config, state, revocation, persist, logger = con
   const { upstream, trustProxy, session } = config
 
   const server = createServer((req, res) => {
+    if (config.logRequests) {
+      const startedAt = Date.now()
+      res.on('finish', () => {
+        logger.log?.(`${req.method ?? 'GET'} ${req.url ?? '/'} ${res.statusCode} ${clientKey(req, trustProxy)} ${Date.now() - startedAt}ms`)
+      })
+    }
     handle(req, res).catch((err) => {
       logger.error?.(err instanceof Error ? err : new Error(String(err)))
-      if (!res.headersSent) res.writeHead(500)
+      if (!res.headersSent) {
+        const body = 'Internal Server Error\n'
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8', 'content-length': Buffer.byteLength(body) })
+        res.end(body)
+        return
+      }
       res.end()
     })
   })

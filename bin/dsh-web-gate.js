@@ -11,12 +11,16 @@
  */
 
 import { createInterface } from 'node:readline'
+import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import { resolveConfig } from '../src/config.js'
 import { hashPassword } from '../src/crypto.js'
 import { emptyState, hasPassword, loadState, saveState } from '../src/state.js'
 import { RevocationList } from '../src/tokens.js'
 import { createGateway } from '../src/server.js'
+
+const require = createRequire(import.meta.url)
+const VERSION = require('../package.json').version
 
 const USAGE = `dsh-web-gate — zero-dependency password gateway for the DeepSeek Harness Web GUI
 
@@ -32,12 +36,15 @@ Options:
   --upstream-host <host>   DSH Web GUI host (default 127.0.0.1)
   --upstream-port <port>   DSH Web GUI port (default 3080)
   --state <path>           state file (default ./dsh-web-gate.state.json)
+  --log-requests           log one line per proxied request
   --insecure               disable the auth gate (DANGEROUS: do not expose to a network)
+  --version, -v            print the version and exit
+  --help, -h               print this help
 
 Environment (overrides the config file):
   DSH_WEB_GATE_HOST, DSH_WEB_GATE_PORT, DSH_WEB_GATE_UPSTREAM_HOST,
   DSH_WEB_GATE_UPSTREAM_PORT, DSH_WEB_GATE_USERNAME, DSH_WEB_GATE_PASSWORD,
-  DSH_WEB_GATE_INSECURE, DSH_WEB_GATE_STATE
+  DSH_WEB_GATE_INSECURE, DSH_WEB_GATE_LOG_REQUESTS, DSH_WEB_GATE_STATE
 `
 
 function parseArgs(argv) {
@@ -46,13 +53,21 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--config' || arg === '--host' || arg === '--port' || arg === '--upstream-host' || arg === '--upstream-port' || arg === '--state') {
-      flags[camel(arg)] = argv[++i]
+      const value = argv[++i]
+      if (value === undefined || value.startsWith('--')) {
+        throw new Error(`dsh-web-gate: ${arg} requires a value`)
+      }
+      flags[camel(arg)] = value
     } else if (arg === '--insecure') {
       flags.insecure = true
+    } else if (arg === '--log-requests') {
+      flags.logRequests = true
     } else if (arg === '--help' || arg === '-h') {
       flags.help = true
+    } else if (arg === '--version' || arg === '-v' || arg === '-V') {
+      flags.version = true
     } else if (arg.startsWith('--')) {
-      flags[camel(arg.slice(2))] = true
+      throw new Error(`dsh-web-gate: unknown option ${JSON.stringify(arg)}`)
     } else {
       positional.push(arg)
     }
@@ -130,6 +145,9 @@ async function promptPassword(question) {
 async function setupPassword(state, config) {
   if (hasPassword(state)) return
   if (config.password) {
+    if (config.password.length < 8) {
+      process.stderr.write('dsh-web-gate: WARNING: the configured password is shorter than 8 characters; consider a stronger one.\n')
+    }
     state.passwordHash = hashPassword(config.password)
     return
   }
@@ -160,6 +178,7 @@ async function startCommand(flags) {
       upstreamPort: flags.upstreamPort !== undefined ? Number(flags.upstreamPort) : undefined,
       state: flags.state,
       insecure: flags.insecure,
+      logRequests: flags.logRequests,
     },
   })
 
@@ -203,6 +222,11 @@ async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2))
   const command = positional[0] ?? 'start'
 
+  if (flags.version) {
+    process.stdout.write(`${VERSION}\n`)
+    return
+  }
+
   if (flags.help) {
     process.stdout.write(USAGE)
     return
@@ -226,8 +250,8 @@ async function main() {
     let password = positional[1]
     if (!password) {
       password = await promptPassword('新口令（至少 8 位）: ')
-      if (password.length < 8) throw new Error('口令至少需要 8 个字符')
     }
+    if (password.length < 8) throw new Error('口令至少需要 8 个字符')
     state.passwordHash = hashPassword(password)
     state.pv = (state.pv ?? 1) + 1
     await saveState(config.stateFile, state)

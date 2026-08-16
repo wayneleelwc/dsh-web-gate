@@ -29,7 +29,7 @@ export async function startUpstream() {
       return
     }
     res.writeHead(200, { 'content-type': 'application/json', 'x-upstream': 'yes' })
-    res.end(JSON.stringify({ method: req.method, url: req.url, host: req.headers.host, cookie: req.headers.cookie ?? null }))
+    res.end(JSON.stringify({ method: req.method, url: req.url, host: req.headers.host, cookie: req.headers.cookie ?? null, xff: req.headers['x-forwarded-for'] ?? null }))
   })
   const upgraded = new Set()
   server.on('upgrade', (req, socket) => {
@@ -43,14 +43,14 @@ export async function startUpstream() {
 }
 
 /** Start a gateway bound to an ephemeral port, proxying to `upstreamPort`. */
-export async function startGateway({ upstreamPort, password = 'test-password' }) {
+export async function startGateway({ upstreamPort, password = 'test-password', trustProxy = false, logRequests = false }) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-web-gate-'))
   const stateFile = join(dir, 'state.json')
   const state = emptyState()
   state.passwordHash = hashPassword(password)
   const config = resolveConfig({
     env: {},
-    overrides: { upstreamPort, state: stateFile, port: 0, host: '127.0.0.1' },
+    overrides: { upstreamPort, state: stateFile, port: 0, host: '127.0.0.1', trustProxy, logRequests },
   })
   const revocation = new RevocationList()
   const gateway = createGateway({

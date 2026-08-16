@@ -35,17 +35,21 @@ export function serializeCookie(name, value, { maxAge, httpOnly = true, sameSite
 export function readBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0
+    let done = false
     const chunks = []
     req.on('data', (chunk) => {
+      if (done) return
       size += chunk.length
       if (size > maxBytes) {
+        done = true
         reject(new Error('request body too large'))
-        req.destroy()
         return
       }
       chunks.push(chunk)
     })
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('end', () => {
+      if (!done) resolve(Buffer.concat(chunks).toString('utf8'))
+    })
     req.on('error', reject)
   })
 }

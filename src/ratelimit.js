@@ -1,6 +1,8 @@
 /**
  * Rate limiting primitives. No third-party dependency: fixed-window counters
- * and a token bucket implemented over `Date.now()`.
+ * and a token bucket implemented over `Date.now()`. Both structures prune
+ * expired entries so their memory use stays bounded over a long-running
+ * process.
  */
 
 /**
@@ -32,6 +34,7 @@ export class LoginLimiter {
   check(key, now = Date.now()) {
     const lock = this.#locks.get(key)
     if (lock && lock.until > now) return { allowed: false, retryAfterMs: lock.until - now }
+    this.prune(now)
     return { allowed: true, retryAfterMs: 0 }
   }
 
@@ -52,6 +55,19 @@ export class LoginLimiter {
   recordSuccess(key) {
     this.#failures.delete(key)
     this.#locks.delete(key)
+  }
+
+  /** Drop expired locks and stale failure timestamps. */
+  prune(now = Date.now()) {
+    for (const [key, lock] of this.#locks) {
+      if (lock.until <= now) this.#locks.delete(key)
+    }
+    const cutoff = now - this.#windowMs
+    for (const [key, timestamps] of this.#failures) {
+      const recent = timestamps.filter((t) => t > cutoff)
+      if (recent.length === 0) this.#failures.delete(key)
+      else this.#failures.set(key, recent)
+    }
   }
 }
 
@@ -74,6 +90,7 @@ export class TokenBucket {
    * @returns {boolean} true when a token was available.
    */
   take(key, now = Date.now()) {
+    if (this.#buckets.size > 1000) this.prune(now)
     const b = this.#buckets.get(key) ?? { tokens: this.#capacity, last: now }
     const elapsed = (now - b.last) / 1000
     b.tokens = Math.min(this.#capacity, b.tokens + elapsed * this.#refillPerSecond)
@@ -85,5 +102,16 @@ export class TokenBucket {
     b.tokens -= 1
     this.#buckets.set(key, b)
     return true
+  }
+
+  /**
+   * Drop buckets idle long enough to have fully refilled — deleting them is
+   * equivalent to recreating a fresh, full bucket on next use.
+   */
+  prune(now = Date.now()) {
+    const idleMs = (this.#capacity / this.#refillPerSecond) * 1000
+    for (const [key, bucket] of this.#buckets) {
+      if (now - bucket.last > idleMs) this.#buckets.delete(key)
+    }
   }
 }

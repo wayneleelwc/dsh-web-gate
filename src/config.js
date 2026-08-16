@@ -24,9 +24,8 @@ export const DEFAULTS = Object.freeze({
   stateFile: './dsh-web-gate.state.json',
   insecure: false,
   trustProxy: false,
+  logRequests: false,
 })
-
-const HOSTS = new Set(['127.0.0.1', '0.0.0.0'])
 
 function first(...values) {
   for (const v of values) {
@@ -105,6 +104,7 @@ export function resolveConfig({ env = {}, file = {}, overrides = {} } = {}) {
     stateFile: first(overrides.state, env.DSH_WEB_GATE_STATE, file.stateFile, DEFAULTS.stateFile),
     insecure: toBool(first(overrides.insecure, env.DSH_WEB_GATE_INSECURE, file.insecure, DEFAULTS.insecure)) ?? DEFAULTS.insecure,
     trustProxy: toBool(first(overrides.trustProxy, env.DSH_WEB_GATE_TRUST_PROXY, file.trustProxy, DEFAULTS.trustProxy)) ?? DEFAULTS.trustProxy,
+    logRequests: toBool(first(overrides.logRequests, env.DSH_WEB_GATE_LOG_REQUESTS, file.logRequests, DEFAULTS.logRequests)) ?? DEFAULTS.logRequests,
     // Initial password, consumed only on first run, never persisted in config.
     password: first(env.DSH_WEB_GATE_PASSWORD, file.password, undefined),
   }
@@ -114,7 +114,7 @@ export function resolveConfig({ env = {}, file = {}, overrides = {} } = {}) {
 }
 
 function validateConfig(config) {
-  const { listen, upstream, session } = config
+  const { listen, upstream, session, rateLimit } = config
   if (typeof listen.host !== 'string' || listen.host.length === 0) {
     throw new Error('dsh-web-gate: listen.host must be a non-empty host')
   }
@@ -123,6 +123,12 @@ function validateConfig(config) {
   }
   if (!['preserve', 'target'].includes(upstream.forwardHost)) {
     throw new Error(`dsh-web-gate: upstream.forwardHost must be "preserve" or "target", got ${JSON.stringify(upstream.forwardHost)}`)
+  }
+  if (typeof session.username !== 'string' || session.username.length === 0) {
+    throw new Error('dsh-web-gate: session.username must be a non-empty string')
+  }
+  if (!/^[^\s()<>@,;:\\"/[\]?={}]+$/.test(session.cookieName)) {
+    throw new Error(`dsh-web-gate: session.cookieName must be a valid cookie name token, got ${JSON.stringify(session.cookieName)}`)
   }
   if (!['Strict', 'Lax', 'None'].includes(session.cookieSameSite)) {
     throw new Error(`dsh-web-gate: session.cookieSameSite must be Strict, Lax, or None, got ${JSON.stringify(session.cookieSameSite)}`)
@@ -133,15 +139,22 @@ function validateConfig(config) {
   if (session.accessTtlSeconds < 60) {
     throw new Error('dsh-web-gate: session.accessTtlSeconds must be at least 60')
   }
-}
-
-/** Print a human-readable summary of the resolved (non-secret) config. */
-export function summarizeConfig(config) {
-  return {
-    listen: `http://${config.listen.host}:${config.listen.port}`,
-    upstream: `${config.upstream.host}:${config.upstream.port} (forwardHost=${config.upstream.forwardHost})`,
-    sessionTtl: `${config.session.accessTtlSeconds}s access / ${config.session.refreshTtlSeconds}s refresh`,
-    username: config.session.username,
-    insecure: config.insecure,
+  if (session.refreshTtlSeconds < session.accessTtlSeconds) {
+    throw new Error('dsh-web-gate: session.refreshTtlSeconds must be >= session.accessTtlSeconds')
+  }
+  if (rateLimit.login.maxAttempts < 1) {
+    throw new Error('dsh-web-gate: rateLimit.login.maxAttempts must be at least 1')
+  }
+  if (rateLimit.login.windowMs < 1) {
+    throw new Error('dsh-web-gate: rateLimit.login.windowMs must be positive')
+  }
+  if (rateLimit.login.lockoutMs < 0) {
+    throw new Error('dsh-web-gate: rateLimit.login.lockoutMs must be non-negative')
+  }
+  if (rateLimit.global.capacity < 1) {
+    throw new Error('dsh-web-gate: rateLimit.global.capacity must be at least 1')
+  }
+  if (rateLimit.global.refillPerSecond <= 0) {
+    throw new Error('dsh-web-gate: rateLimit.global.refillPerSecond must be positive')
   }
 }

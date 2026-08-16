@@ -19,18 +19,6 @@ const HOP_BY_HOP = new Set([
   'upgrade',
 ])
 
-/** Resolve the client address for X-Forwarded-For. */
-function clientAddress(req, trustProxy) {
-  if (trustProxy) {
-    const xff = req.headers['x-forwarded-for']
-    if (typeof xff === 'string' && xff.length > 0) {
-      const first = xff.split(',')[0].trim()
-      if (first) return first
-    }
-  }
-  return req.socket?.remoteAddress ?? ''
-}
-
 /** Drop specific cookie names from a Cookie header (the gate's own auth cookies). */
 function stripCookieHeader(header, names) {
   if (!header || names.length === 0) return header
@@ -44,7 +32,12 @@ function stripCookieHeader(header, names) {
   return kept.join('; ')
 }
 
-/** Build upstream headers: drop hop-by-hop, rewrite Host per policy, append XFF. */
+/**
+ * Build upstream headers: drop hop-by-hop, rewrite Host per policy, and set
+ * the X-Forwarded-* chain. When `trustProxy` is false, client-supplied
+ * `x-forwarded-*` values are ignored (overwritten) so a client cannot spoof
+ * them; when true, the trusted proxy's chain is appended to.
+ */
 function buildUpstreamHeaders(req, upstream, { forwardHost, trustProxy, stripCookies = [] }) {
   const headers = {}
   for (const [key, value] of Object.entries(req.headers)) {
@@ -58,12 +51,17 @@ function buildUpstreamHeaders(req, upstream, { forwardHost, trustProxy, stripCoo
     else delete headers.cookie
   }
   headers.host = forwardHost === 'target' ? `${upstream.host}:${upstream.port}` : (req.headers.host ?? `${upstream.host}:${upstream.port}`)
-  const ip = clientAddress(req, trustProxy)
-  if (ip) {
-    headers['x-forwarded-for'] = headers['x-forwarded-for'] ? `${headers['x-forwarded-for']}, ${ip}` : ip
+
+  const peer = req.socket?.remoteAddress ?? ''
+  const socketProto = req.socket?.encrypted ? 'https' : 'http'
+  if (trustProxy) {
+    headers['x-forwarded-for'] = headers['x-forwarded-for'] ? `${headers['x-forwarded-for']}, ${peer}` : peer
+    if (headers['x-forwarded-proto'] === undefined) headers['x-forwarded-proto'] = socketProto
+  } else {
+    headers['x-forwarded-for'] = peer
+    headers['x-forwarded-proto'] = socketProto
   }
-  headers['x-forwarded-proto'] = req.socket?.encrypted ? 'https' : 'http'
-  if (req.headers.host) headers['x-forwarded-host'] = req.headers.host
+  headers['x-forwarded-host'] = req.headers.host ?? headers.host
   return headers
 }
 
@@ -104,7 +102,12 @@ export function proxyHttp(req, res, upstream, { forwardHost = 'preserve', trustP
   })
 
   upstreamReq.on('error', () => {
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' })
+    if (!res.headersSent) {
+      const body = 'Bad Gateway\n'
+      res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'content-length': Buffer.byteLength(body) })
+      res.end(body)
+      return
+    }
     res.end()
   })
 
