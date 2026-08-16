@@ -1,0 +1,19 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 3090 },
+  "upstream": { "host": "127.0.0.1", "port": 3080, "forwardHost": "preserve" },
+  "session": {
+    "username": "admin",
+    "accessTtlSeconds": 43200,
+    "refreshTtlSeconds": 2592000,
+    "cookieName": "dsh_web_gate",
+    "cookieSecure": false,
+    "cookieSameSite": "Strict"
+  },
+  "rateLimit": {
+    "login": { "windowMs": 900000, "maxAttempts": 5, "lockoutMs": 900000 },
+    "global": { "enabled": false, "capacity": 60, "refillPerSecond": 30 }
+  },
+  "stateFile": "./dsh-web-gate.state.json",
+  "insecure": false,
+  "trustProxy": false
+}

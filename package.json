@@ -20,7 +20,7 @@
   },
   "scripts": {
     "start": "node bin/dsh-web-gate.js",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.js\"",
     "hash-password": "node bin/dsh-web-gate.js hash-password"
   },
   "files": [

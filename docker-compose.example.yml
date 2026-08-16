@@ -1,0 +1,26 @@
+# Example: run dsh-web-gate as a reverse proxy in front of the DSH Web GUI.
+#
+# The DSH Web GUI itself must stay bound to a non-public interface (or at
+# least be unreachable except through the gateway). Run it with:
+#   dsh web --host 127.0.0.1 --port 3080 --trusted-host <public-host>:3090
+# where <public-host> is the host your users reach the gateway on.
+services:
+  gate:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Where the gateway listens (public) and where DSH Web GUI lives (private).
+      DSH_WEB_GATE_HOST: "0.0.0.0"
+      DSH_WEB_GATE_PORT: "3090"
+      DSH_WEB_GATE_UPSTREAM_HOST: "host.docker.internal"
+      DSH_WEB_GATE_UPSTREAM_PORT: "3080"
+      # Initial password, consumed once and stored (scrypt-hashed) in the state
+      # volume. Change it later from the gateway's /settings page or the CLI.
+      DSH_WEB_GATE_PASSWORD: "${DSH_WEB_GATE_PASSWORD:?set DSH_WEB_GATE_PASSWORD}"
+    ports:
+      - "3090:3090"
+    volumes:
+      - gate-state:/data
+
+volumes:
+  gate-state:

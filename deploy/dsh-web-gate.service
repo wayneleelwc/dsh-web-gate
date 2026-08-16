@@ -1,0 +1,25 @@
+[Unit]
+Description=dsh-web-gate: password gateway for the DeepSeek Harness Web GUI
+After=network.target
+
+[Service]
+Type=simple
+# Point EnvironmentFile at a file exporting DSH_WEB_GATE_* values, or set them
+# inline. The password is consumed once and stored scrypt-hashed in the state
+# file; use the gateway's /settings page or `dsh-web-gate set-password` after
+# first boot.
+EnvironmentFile=-/etc/dsh-web-gate.env
+Environment=DSH_WEB_GATE_UPSTREAM_HOST=127.0.0.1
+Environment=DSH_WEB_GATE_UPSTREAM_PORT=3080
+Environment=DSH_WEB_GATE_HOST=0.0.0.0
+Environment=DSH_WEB_GATE_PORT=3090
+ExecStart=/usr/bin/node /opt/dsh-web-gate/bin/dsh-web-gate.js start --state /var/lib/dsh-web-gate/state.json
+Restart=on-failure
+User=dsh-web-gate
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dsh-web-gate
+
+[Install]
+WantedBy=multi-user.target
