@@ -139,6 +139,23 @@ test('change password invalidates the old password and old sessions', async () =
   }
 })
 
+test('change password requires an authenticated session', async () => {
+  const up = await startUpstream()
+  const gw = await startGateway({ upstreamPort: up.port })
+  try {
+    const res = await fetch(`${gw.base}/auth/change-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: gw.base },
+      body: 'current=test-password&password=new-password-1&confirm=new-password-1',
+      redirect: 'manual',
+    })
+    assert.equal(res.status, 401)
+  } finally {
+    await gw.stop()
+    await up.stop()
+  }
+})
+
 test('login brute force is rate-limited', async () => {
   const up = await startUpstream()
   const gw = await startGateway({ upstreamPort: up.port })

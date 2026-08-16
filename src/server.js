@@ -111,7 +111,9 @@ export function createGateway({ config, state, revocation, persist, logger = con
 
     if (method === 'POST' && path === '/auth/change-password') {
       if (!isSameOrigin(req)) return writeJson(res, 403, { error: 'forbidden' })
-      await handleChangePassword(req, res)
+      const auth = gate.authenticate(req)
+      if (!auth.ok) return writeJson(res, 401, { error: 'unauthorized' })
+      await handleChangePassword(req, res, auth)
       return
     }
 
@@ -188,7 +190,7 @@ export function createGateway({ config, state, revocation, persist, logger = con
     writeHtml(res, result.status, loginPage({ error: result.error ?? '登录失败', next }))
   }
 
-  async function handleChangePassword(req, res) {
+  async function handleChangePassword(req, res, auth) {
     let body
     try {
       body = await readBody(req)
@@ -206,7 +208,8 @@ export function createGateway({ config, state, revocation, persist, logger = con
       writeHtml(res, 200, settingsPage({ success: result.success, username: session.username }), { 'set-cookie': result.cookies })
       return
     }
-    writeHtml(res, result.status, settingsPage({ error: result.error, username: session.username }))
+    // A failed attempt must still persist a session that was just renewed.
+    writeHtml(res, result.status, settingsPage({ error: result.error, username: session.username }), { 'set-cookie': auth?.rotated ?? [] })
   }
 
   // Upgraded (WebSocket) sockets are detached from Node's connection
