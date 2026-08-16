@@ -1,141 +1,261 @@
+<div align="center">
+
 # dsh-web-gate
 
-**Zero-dependency password gateway for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI.**
+**A zero-dependency authentication gateway for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI.**
 
-> 一个零第三方依赖的口令网关：放在 DeepSeek Harness Web 界面前面，进入网页前必须先输入访问口令；口令可在登录后的「设置」页面修改。参考了 Hermes Agent 的 `dashboard_auth/basic` 插件与 Open WebUI 的反向代理 + 鉴权策略。
+A tiny, auditable reverse proxy that puts a password login in front of the DSH Web GUI — static pages, the `/api` JSON-RPC + SSE transport, and WebSocket upgrades.
 
-`dsh-web-gate` is a small, auditable reverse proxy written in plain Node.js (ESM) using **only `node:crypto`** — no npm dependencies, no build step. It puts a real authentication gate in front of the DSH Web GUI and protects **all three** channels the GUI uses: static HTML, the `/api` JSON-RPC + SSE transport, and the WebSocket upgrade.
+[![CI](https://github.com/wayneleelwc/dsh-web-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/wayneleelwc/dsh-web-gate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#prerequisites)
+[![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#features)
+[![Tests: passing](https://img.shields.io/badge/tests-32%20passing-brightgreen.svg)](#tests)
 
+</div>
+
+`dsh-web-gate` is a small, dependency-free reverse proxy written in plain Node.js (ESM). It uses **only `node:crypto`** — no npm packages, no build step — and protects all three channels the DSH Web GUI uses. It mirrors the security design of the [Hermes Agent `dashboard_auth/basic`](https://github.com/NousResearch/hermes-agent/blob/main/plugins/dashboard_auth/basic/__init__.py) provider and the reverse-proxy auth strategy recommended by [Open WebUI](https://docs.openwebui.com/ecosystem/computer/phone-and-remote/reverse-proxy/).
+
+```mermaid
+flowchart LR
+    Browser["Browser"] -->|"HTTP(S)"| Gate["dsh-web-gate<br/>(login · session cookie · rate limit · proxy)"]
+    Gate -->|"127.0.0.1:3080"| DSH["dsh web<br/>(loopback only)"]
 ```
-浏览器 ──HTTPS/HTTP──▶ dsh-web-gate ──127.0.0.1:3080──▶ dsh web (loopback only)
-                        │  登录页 / 口令校验 / 会话 Cookie / 限流 / 反向代理
-```
 
-## 为什么是「网关」而不是「改 DSH」
+## Table of Contents
 
-DSH 的 `webServer` 服务是一个路由注册表（`register` / `registerFallback` / `registerUpgrade`），**没有中间件钩子**，也没有自带的认证层（其 `/api` 信任栅栏明确说明「不是认证层」）。任何想在进程内拦截 `/api`、WebSocket 和静态资源三者的「插件」都必须抢先占住 `fallback` 座位并重新实现全部路由，既脆弱又不可维护。
+- [Features](#features)
+- [Background](#background)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Quick start](#quick-start)
+- [Usage](#usage)
+  - [CLI](#cli)
+  - [Changing the password](#changing-the-password)
+- [Configuration](#configuration)
+- [Gateway endpoints](#gateway-endpoints)
+- [Deployment](#deployment)
+  - [Server](#server)
+  - [Docker](#docker)
+  - [systemd](#systemd)
+  - [TLS](#tls)
+- [Security](#security)
+- [Project structure](#project-structure)
+- [Development](#development)
+- [FAQ](#faq)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-因此本项目采用行业成熟方案：**反向代理网关**（与 Open WebUI 官方推荐一致），把 DSH 收紧到仅回环监听，由网关承担认证。这样对 DSH 零侵入、可独立部署、可被 nginx/TLS 再包一层。
+## Features
 
-## 特性
+- **Real password authentication** — memory-hard `scrypt` hashing (N=2^14, r=8, p=1, matching Hermes), constant-time comparison. No plaintext password at rest, in memory, or in logs.
+- **Stateless sessions** — HMAC-SHA256-signed `access` (12h) + `refresh` (30d) cookies; `HttpOnly`, `SameSite=Strict`; transparent silent renewal when the access token lapses.
+- **Password change logs everyone out** — a `pv` (password-generation) claim makes every old session invalid the moment the password changes, without scanning a session store.
+- **Brute-force protection** — per-IP login rate limiting with lockout, plus an optional global token bucket.
+- **CSRF protection** — `SameSite=Strict` cookies and same-origin checks on the gateway's own write endpoints; DSH's own `/api` trust fence keeps working.
+- **Full three-channel proxying** — static assets, `/api` (including SSE streaming), and WebSocket upgrades, all authenticated before forwarding.
+- **Password reset in a settings page** — visit `/settings` after login, or use `dsh-web-gate set-password`.
+- **Zero dependencies, zero build** — `node bin/dsh-web-gate.js` just runs.
+- **Fail-closed** — refuses to start without a password unless `--insecure` is passed explicitly (with a loud warning).
 
-- **真实口令认证**：scrypt 口令哈希（N=2^14, r=8, p=1，与 Hermes 相同参数）、恒定时间比较，内存中无明文、磁盘上无明文。
-- **无状态会话**：HMAC-SHA256 签名的 access（12h）+ refresh（30d）Cookie，`HttpOnly` / `SameSite=Strict`，过期自动透明续期。
-- **口令变更即全面下线**：`pv`（口令代际）声明使改密后所有旧会话立即失效，无需扫描会话表。
-- **防暴力破解**：按 IP 的登录限流 + 锁定期；可选全局令牌桶限流。
-- **CSRF 防护**：`SameSite=Strict` + 网关自身写操作的同源校验；DSH 自身的 `/api` 信任栅栏继续生效。
-- **三条通道全代理**：静态资源、`/api`（含 SSE 流式）、WebSocket upgrade 全部经网关鉴权后透传。
-- **口令修改**：登录后访问 `/settings` 页改密（需当前口令），或 `dsh-web-gate set-password` 命令行。
-- **零依赖、零构建**：`node bin/dsh-web-gate.js` 直接运行；仅 `node:crypto` + 标准库。
-- **Fail-closed**：未配置口令且非交互环境时**拒绝启动**（除非显式 `--insecure`，并打印醒目警告）。
+## Background
 
-## 快速开始（本地）
+The DSH `webServer` service is a *route registry* (`register` / `registerFallback` / `registerUpgrade`) with **no middleware hook and no built-in auth layer** — its `/api` trust fence states explicitly that it is "not an auth layer". The GUI is served over three independent channels, so an in-process "plugin" that gates all of them would have to seize the single fallback seat and reimplement every route, coupling itself to DSH internals.
 
-DSH Web GUI 默认在 `127.0.0.1:3080`，网关默认在 `127.0.0.1:3090` 反代它：
+The mature, portable approach — the one Open WebUI recommends — is a **reverse proxy**: keep DSH on loopback and authenticate at the front door. This is zero-invasion to DSH, independently deployable, and can itself sit behind nginx/Caddy for TLS.
+
+For the full design rationale and threat model, see [`docs/architecture.md`](docs/architecture.md) and [`docs/security.md`](docs/security.md).
+
+## Installation
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) `>= 20` (no npm install step — the gateway has zero dependencies).
+
+### Quick start
+
+The DSH Web GUI listens on `127.0.0.1:3080` by default; the gateway listens on `127.0.0.1:3090` and proxies to it.
 
 ```bash
-# 方式一：环境变量设置初始口令（首次运行写入状态文件，之后可改）
-DSH_WEB_GATE_PASSWORD='你的强口令' node bin/dsh-web-gate.js start
+git clone https://github.com/wayneleelwc/dsh-web-gate.git
+cd dsh-web-gate
 
-# 方式二：交互式首次设置口令
-node bin/dsh-web-gate.js start
-# 设置初始访问口令（至少 8 位）: ********
+# Set the initial password (consumed once, stored as an scrypt hash).
+DSH_WEB_GATE_PASSWORD='your-strong-password' node bin/dsh-web-gate.js start
 ```
 
-然后访问 `http://127.0.0.1:3090`，输入口令进入 DSH；登录后访问 `http://127.0.0.1:3090/settings` 修改口令。
+Open `http://127.0.0.1:3090`, enter the password, and you are in.
 
-## 配置
+> Alternatively, run `node bin/dsh-web-gate.js start` without `DSH_WEB_GATE_PASSWORD` to set the password interactively on first boot.
 
-三层配置，优先级从高到低：**CLI 参数 > 环境变量 `DSH_WEB_GATE_*` > 配置文件 `dsh-web-gate.config.json` > 内置默认值**。
+## Usage
 
-| 环境变量 | 默认值 | 说明 |
+### CLI
+
+```bash
+node bin/dsh-web-gate.js start              # start the gateway (default command)
+node bin/dsh-web-gate.js hash-password      # print an scrypt hash (for pre-seeding the state file)
+node bin/dsh-web-gate.js set-password       # change the password in the state file (bumps pv, logs everyone out)
+```
+
+### Changing the password
+
+- **Web**: after login, open `http://127.0.0.1:3090/settings` and submit the current password plus a new one. All other logged-in sessions are invalidated immediately.
+- **CLI**: `node bin/dsh-web-gate.js set-password --state /path/to/state.json`.
+
+## Configuration
+
+Three layers, highest precedence first: **CLI flags > `DSH_WEB_GATE_*` environment variables > `dsh-web-gate.config.json` > built-in defaults**.
+
+### Environment variables
+
+| Variable | Default | Description |
 | --- | --- | --- |
-| `DSH_WEB_GATE_HOST` | `127.0.0.1` | 网关监听地址（公网用 `0.0.0.0`） |
-| `DSH_WEB_GATE_PORT` | `3090` | 网关监听端口 |
-| `DSH_WEB_GATE_UPSTREAM_HOST` | `127.0.0.1` | DSH Web GUI 地址 |
-| `DSH_WEB_GATE_UPSTREAM_PORT` | `3080` | DSH Web GUI 端口 |
-| `DSH_WEB_GATE_USERNAME` | `admin` | 会话主体标识（单用户，仅作显示/签发） |
-| `DSH_WEB_GATE_PASSWORD` | — | 初始口令（仅首次运行消费，之后存 scrypt 哈希） |
-| `DSH_WEB_GATE_ACCESS_TTL` | `43200` | access token 寿命（秒） |
-| `DSH_WEB_GATE_REFRESH_TTL` | `2592000` | refresh token 寿命（秒） |
-| `DSH_WEB_GATE_COOKIE_NAME` | `dsh_web_gate` | Cookie 前缀（生成 `<name>_access` / `<name>_refresh`） |
-| `DSH_WEB_GATE_COOKIE_SECURE` | `false` | Cookie `Secure`（HTTPS 下应设为 `true`） |
+| `DSH_WEB_GATE_HOST` | `127.0.0.1` | Listen host (`0.0.0.0` for public) |
+| `DSH_WEB_GATE_PORT` | `3090` | Listen port |
+| `DSH_WEB_GATE_UPSTREAM_HOST` | `127.0.0.1` | DSH Web GUI host |
+| `DSH_WEB_GATE_UPSTREAM_PORT` | `3080` | DSH Web GUI port |
+| `DSH_WEB_GATE_USERNAME` | `admin` | Session subject (single user) |
+| `DSH_WEB_GATE_PASSWORD` | — | Initial password (first run only; stored as scrypt hash) |
+| `DSH_WEB_GATE_ACCESS_TTL` | `43200` | Access token lifetime (seconds) |
+| `DSH_WEB_GATE_REFRESH_TTL` | `2592000` | Refresh token lifetime (seconds) |
+| `DSH_WEB_GATE_COOKIE_NAME` | `dsh_web_gate` | Cookie prefix (`<name>_access` / `<name>_refresh`) |
+| `DSH_WEB_GATE_COOKIE_SECURE` | `false` | Set the `Secure` cookie flag (required for HTTPS) |
 | `DSH_WEB_GATE_COOKIE_SAMESITE` | `Strict` | `Strict` / `Lax` / `None` |
-| `DSH_WEB_GATE_LOGIN_MAX_ATTEMPTS` | `5` | 锁定前的失败次数 |
-| `DSH_WEB_GATE_LOGIN_WINDOW_MS` | `900000` | 失败计数窗口（毫秒） |
-| `DSH_WEB_GATE_LOGIN_LOCKOUT_MS` | `900000` | 锁定时长（毫秒） |
-| `DSH_WEB_GATE_GLOBAL_LIMIT_ENABLED` | `false` | 启用全局令牌桶限流 |
-| `DSH_WEB_GATE_STATE` | `./dsh-web-gate.state.json` | 状态文件路径（含口令哈希与签名密钥，权限 0600） |
-| `DSH_WEB_GATE_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For`（网关前还有一层代理时才开） |
-| `DSH_WEB_GATE_INSECURE` | `false` | 关闭认证（危险） |
+| `DSH_WEB_GATE_LOGIN_MAX_ATTEMPTS` | `5` | Failures before lockout |
+| `DSH_WEB_GATE_LOGIN_WINDOW_MS` | `900000` | Failure counting window (ms) |
+| `DSH_WEB_GATE_LOGIN_LOCKOUT_MS` | `900000` | Lockout duration (ms) |
+| `DSH_WEB_GATE_GLOBAL_LIMIT_ENABLED` | `false` | Enable the global token bucket |
+| `DSH_WEB_GATE_STATE` | `./dsh-web-gate.state.json` | State file (password hash + signing key, mode 0600) |
+| `DSH_WEB_GATE_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` (only behind a trusted proxy) |
+| `DSH_WEB_GATE_INSECURE` | `false` | Disable authentication (**dangerous**) |
 
-完整配置见 [`config.example.json`](config.example.json)。
+See [`config.example.json`](config.example.json) for the config-file form.
 
-## CLI
+### CLI flags
 
-```bash
-node bin/dsh-web-gate.js start              # 启动网关（默认命令）
-node bin/dsh-web-gate.js hash-password      # 生成 scrypt 哈希（可预置到状态文件）
-node bin/dsh-web-gate.js set-password       # 直接修改状态文件中的口令（会 bump pv 使旧会话失效）
+```text
+--config <path>      JSON config file
+--host <host>        listen host
+--port <port>        listen port
+--upstream-host      DSH host
+--upstream-port      DSH port
+--state <path>       state file
+--insecure           disable the auth gate
 ```
 
-## 部署到服务器
+## Gateway endpoints
 
-1. **收紧 DSH**：只让 DSH 监听回环，并登记网关的公开主机名，使其 `/api` 信任栅栏放行：
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `GET` | `/login` | — | Login page (redirects to `/` if already authenticated) |
+| `POST` | `/auth/login` | — | Verify password, set session cookies, redirect |
+| `POST` | `/auth/logout` | — | Revoke presented tokens and clear cookies |
+| `POST` | `/auth/change-password` | ✅ | Change password, bump `pv`, re-mint the current session |
+| `GET` | `/settings` | ✅ | Change-password page |
+| `GET` | `/healthz` | — | Liveness probe |
+| `*` | everything else | ✅ | Proxied to the upstream DSH Web GUI |
+
+Unauthenticated `/api/*` requests receive `401`; unauthenticated navigations are redirected to `/login`.
+
+## Deployment
+
+### Server
+
+1. Pin DSH to loopback and register the gateway's public authority so DSH's `/api` trust fence accepts it:
 
    ```bash
-   dsh web --host 127.0.0.1 --port 3080 --trusted-host <你的域名或IP>:3090
+   dsh web --host 127.0.0.1 --port 3080 --trusted-host <your-host-or-ip>:3090
    ```
 
-2. **启动网关**（监听公网接口）：
+2. Run the gateway on the public interface:
 
    ```bash
    DSH_WEB_GATE_HOST=0.0.0.0 DSH_WEB_GATE_PORT=3090 \
-   DSH_WEB_GATE_PASSWORD='强口令' node bin/dsh-web-gate.js start --state /var/lib/dsh-web-gate/state.json
+   DSH_WEB_GATE_PASSWORD='strong-password' \
+   node bin/dsh-web-gate.js start --state /var/lib/dsh-web-gate/state.json
    ```
 
-3. **（强烈建议）TLS**：网关本身是纯 HTTP，生产环境请在它前面接 nginx/Caddy 终止 TLS，并把 `DSH_WEB_GATE_COOKIE_SECURE=true`。
-
-- **Docker**：见 [`Dockerfile`](Dockerfile) 与 [`docker-compose.example.yml`](docker-compose.example.yml)，状态文件挂载到 `/data` 卷以跨容器重启保留口令与会话密钥。
-- **systemd**：见 [`deploy/dsh-web-gate.service`](deploy/dsh-web-gate.service)。
-
-## 与业界方案的关系
-
-| 方面 | Hermes `dashboard_auth/basic` | Open WebUI | 本项目 |
-| --- | --- | --- | --- |
-| 位置 | 进程内 dashboard 网关中间件 | 应用内 JWT / 反向代理 | 独立反向代理网关 |
-| 口令哈希 | 标准库 scrypt（无第三方依赖） | bcrypt/argon2（应用内） | 标准库 scrypt（无第三方依赖） |
-| 会话 | 无状态 HMAC 签名 token（access+refresh） | JWT + refresh | 无状态 HMAC 签名（access+refresh） |
-| 常量时间比较 | 是（含未知用户的 dummy hash） | 视实现 | 是 |
-| 口令变更下线 | 换 secret / 配置重载 | token 失效 | `pv` 代际 bump，立即全局失效 |
-| 防暴力破解 | 由上游框架提供 | 应用内 | 内置按 IP 限流 + 锁定 |
-
-设计细节与威胁模型见 [`docs/architecture.md`](docs/architecture.md) 与 [`docs/security.md`](docs/security.md)。
-
-## 目录结构
-
-```
-bin/dsh-web-gate.js    CLI 入口（start / hash-password / set-password）
-src/crypto.js          scrypt 哈希、HMAC 签名、恒定时间比较
-src/tokens.js          access/refresh token、pv 代际、jti 吊销表
-src/ratelimit.js       登录限流 + 令牌桶
-src/auth.js            会话签发/校验/续期、登录/登出/改密逻辑
-src/proxy.js           HTTP（SSE）与 WebSocket upgrade 反向代理
-src/server.js          HTTP 服务装配与路由分发
-src/config.js          配置解析与校验
-src/state.js           状态文件（0600）原子读写
-src/pages.js           登录页 / 设置改密页（纯 HTML，无脚本，严格 CSP）
-test/                  node:test 单元 + 端到端测试
-```
-
-## 测试
+### Docker
 
 ```bash
-npm test      # 等价于 node --test "test/*.test.js"
+docker build -t dsh-web-gate .
+docker run -d --name dsh-web-gate \
+  -p 3090:3090 \
+  -e DSH_WEB_GATE_HOST=0.0.0.0 \
+  -e DSH_WEB_GATE_UPSTREAM_HOST=host.docker.internal \
+  -e DSH_WEB_GATE_UPSTREAM_PORT=3080 \
+  -e DSH_WEB_GATE_PASSWORD='strong-password' \
+  -v dsh-web-gate-state:/data \
+  dsh-web-gate
 ```
 
-32 个测试覆盖：哈希往返与篡改、token 签发/过期/pv 失效/吊销、限流锁定、登录/登出/改密、SSE 流式透传、WebSocket 鉴权与透传、安全响应头。
+A compose example is in [`docker-compose.example.yml`](docker-compose.example.yml).
 
-## 许可
+### systemd
 
-[MIT](LICENSE)
+A hardened unit is provided at [`deploy/dsh-web-gate.service`](deploy/dsh-web-gate.service).
+
+### TLS
+
+The gateway itself speaks plain HTTP. In production, terminate TLS in front of it (nginx, Caddy, Cloudflare) and set `DSH_WEB_GATE_COOKIE_SECURE=true`.
+
+## Security
+
+The gateway answers "who may enter the Web GUI". It does **not** provide transport encryption, multi-user roles, or SSO — those belong in front of it. See [`docs/security.md`](docs/security.md) for the full threat-model table and a deployment checklist. To report a vulnerability, open an issue or contact the maintainer directly.
+
+## Project structure
+
+```
+bin/dsh-web-gate.js    CLI entry (start / hash-password / set-password)
+src/crypto.js          scrypt hashing, HMAC signing, constant-time comparison
+src/tokens.js          access/refresh tokens, pv generation, jti revocation
+src/ratelimit.js       login limiter + token bucket
+src/auth.js            session mint/verify/renew, login/logout/change-password
+src/proxy.js           HTTP (SSE) + WebSocket reverse proxy
+src/server.js          HTTP server wiring and route dispatch
+src/config.js          config parsing and validation
+src/state.js           state file (0600) atomic read/write
+src/pages.js           login / settings pages (pure HTML, no script, strict CSP)
+test/                  node:test unit + end-to-end tests
+```
+
+## Development
+
+### Tests
+
+```bash
+npm test   # equivalent to `node --test "test/*.test.js"`
+```
+
+The 32 tests cover hashing round-trips and tamper detection, token signing/expiry/pv-invalidation/revocation, rate-limit lockout, login/logout/change-password, SSE streaming proxying, WebSocket gating and proxying, and security headers.
+
+## FAQ
+
+**Why a reverse proxy instead of a DSH plugin?**
+DSH's HTTP layer has no middleware hook and no auth layer; gating all three channels in-process would mean replacing the static, `/api`, and WebSocket route owners. A reverse proxy is the zero-invasion, industry-standard approach. See [Background](#background).
+
+**Does the gateway support multiple users or SSO?**
+No — it is a single-password gate by design. For multi-user/OIDC, put an OAuth2 proxy (Authelia, oauth2-proxy) in front.
+
+**Where is the password stored?**
+Only as an scrypt hash in `dsh-web-gate.state.json` (mode 0600). Plaintext exists only transiently during first-run setup and password changes.
+
+**What happens on restart?**
+The password hash and signing secret are persisted in the state file, so sessions survive a restart. The in-memory `jti` revocation list is cleared (a documented trade-off; see [`docs/security.md`](docs/security.md)).
+
+## Roadmap
+
+- [ ] Distributed rate limiting for multi-replica deployments
+- [ ] Persistent `jti` revocation across restarts
+- [ ] Optional OIDC / SSO support
+- [ ] Optional request audit logging
+
+## Contributing
+
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR. Report bugs and ideas via [issues](https://github.com/wayneleelwc/dsh-web-gate/issues).
+
+## License
+
+[MIT](LICENSE) © 2026 [wayneleelwc](https://github.com/wayneleelwc)
